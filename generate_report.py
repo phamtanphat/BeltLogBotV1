@@ -97,7 +97,7 @@ def read_legacy_sheet(file_path, sheet_name):
         print(f"⚠️ [LỖI] Không thể đọc file: {e}")
         return pd.DataFrame()
 
-def process_and_merge_excel(file_equipment=FILE_EQUIPMENT, file_mds=FILE_MDS, output_excel=OUTPUT_EXCEL, verbose=True) -> dict | bool:
+def process_and_merge_excel(file_equipment=FILE_EQUIPMENT, file_mds=FILE_MDS, output_excel=OUTPUT_EXCEL, verbose=True):
     if verbose:
         print("=========================================================")
         print("🚀 BẮT ĐẦU TỔNG HỢP BÁO CÁO LÝ LỊCH THIẾT BỊ TỰ ĐỘNG 🚀")

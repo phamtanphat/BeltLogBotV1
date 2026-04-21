@@ -35,11 +35,16 @@ def main_menu():
 def detect_file_type(filename: str) -> str:
     """Trả về 'eq', 'mds', hoặc 'unknown'"""
     name = filename.lower()
-    # Nhận dạng file Thiết bị / EQ
-    if any(k in name for k in ['eq', 'equipment', 'thiet_bi', 'thiết bị', 'ly_lich', 'lý lịch', 'source_eq']):
+    # Nhận dạng file Thiết bị / EQ (mở rộng từ khóa)
+    if any(k in name for k in [
+        'eq', 'equipment', 'thiet_bi', 'ly_lich', 'lich_su',
+        'source_eq', 'ctbt', 'theo_doi', 'history', 'log'
+    ]):
         return 'eq'
     # Nhận dạng file MDS
-    if any(k in name for k in ['mds', 'maintenance', 'bao_tri', 'bảo trì', 'source_mds']):
+    if any(k in name for k in [
+        'mds', 'maintenance', 'bao_tri', 'source_mds', 'nhat_ky'
+    ]):
         return 'mds'
     return 'unknown'
 
@@ -160,20 +165,24 @@ def handle_docs(message):
         bot.reply_to(message, "⚠️ Chỉ nhận file Excel (.xlsx / .xls)\nBấm *🔄 Làm Mới* nếu gửi nhầm.", parse_mode='Markdown')
         return
 
-    user_sessions.setdefault(chat_id, {"eq": None, "mds": None})
+    user_sessions.setdefault(chat_id, {"eq": None, "mds": None, "pending": None})
 
     # Tự nhận dạng loại file
     file_type = detect_file_type(file_name)
     if file_type == 'unknown':
-        # Hỏi người dùng chọn loại file
+        # Lưu tạm file_id vào session — KHÔNG nhét vào callback_data (giới hạn 64 bytes)
+        user_sessions[chat_id]["pending"] = {
+            "file_id": message.document.file_id,
+            "file_name": file_name
+        }
         markup = types.InlineKeyboardMarkup()
-        markup.add(
-            types.InlineKeyboardButton("📁 File Lý Lịch Thiết Bị (EQ)", callback_data=f"settype:eq:{message.document.file_id}:{file_name}"),
-            types.InlineKeyboardButton("📁 File Nhật Ký MDS", callback_data=f"settype:mds:{message.document.file_id}:{file_name}")
+        markup.row(
+            types.InlineKeyboardButton("🗂 File Lý Lịch TB", callback_data="settype:eq"),
+            types.InlineKeyboardButton("🗂 File Nhật Ký MDS", callback_data="settype:mds")
         )
         bot.reply_to(
             message,
-            f"🤔 Tôi không nhận ra loại file `{file_name}`.\nĐây là file gì?",
+            f"🤔 Không nhận ra loại file `{file_name}`\nĐây là file nào?",
             parse_mode='Markdown',
             reply_markup=markup
         )
@@ -185,12 +194,20 @@ def handle_docs(message):
 # ─── Xử lý nút Inline (khi không nhận ra loại file) ────
 @bot.callback_query_handler(func=lambda call: call.data.startswith("settype:"))
 def callback_set_type(call):
-    parts = call.data.split(":", 3)
-    _, file_type, file_id, file_name = parts
     chat_id = call.message.chat.id
-    bot.answer_callback_query(call.id, f"Đã chọn: {'EQ' if file_type == 'eq' else 'MDS'}")
+    file_type = call.data.split(":")[1]          # 'eq' hoặc 'mds' — an toàn, không bao giờ quá 64 bytes
+
+    pending = user_sessions.get(chat_id, {}).get("pending")
+    if not pending:
+        bot.answer_callback_query(call.id, "⚠️ Phiên đã hết hạn. Gửi lại file nhé!")
+        return
+
+    label = 'Lý Lịch TB' if file_type == 'eq' else 'Nhật Ký MDS'
+    bot.answer_callback_query(call.id, f"✅ Đã xác nhận: {label}")
     bot.edit_message_reply_markup(chat_id, call.message.message_id, reply_markup=None)
-    _save_file(chat_id, call.message, file_name, file_id, file_type)
+
+    user_sessions[chat_id]["pending"] = None     # Xóa pending
+    _save_file(chat_id, call.message, pending["file_name"], pending["file_id"], file_type)
 
 
 # ─── Lưu file vào session ───────────────────────────────
@@ -344,7 +361,7 @@ def _run_report(chat_id, message):
             f = s.get(key)
             if f and os.path.exists(f): os.remove(f)
         if os.path.exists(out_path): os.remove(out_path)
-        user_sessions[chat_id] = {"eq": None, "mds": None}
+        user_sessions[chat_id] = {"eq": None, "mds": None, "pending": None}
 
 
 # ─── Bắt mọi tin nhắn text không khớp ──────────────────
