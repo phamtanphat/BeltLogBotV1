@@ -1,0 +1,9 @@
+.env
+downloads/
+__pycache__/
+*.pyc
+final_equipment_report.xlsx
+.DS_Store
+google_credentials.json
+canvas-landing-152308-d254115a928a.json
+report_history.json

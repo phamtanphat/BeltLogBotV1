@@ -3,6 +3,7 @@ from telebot import types
 import os
 import generate_report
 import history_manager
+import drive_manager
 from datetime import datetime
 from keep_alive import keep_alive
 
@@ -281,28 +282,49 @@ def _run_report(chat_id, message):
             bot.edit_message_text(
                 "⚙️ *Đang xử lý...*\n\n"
                 "▪️ Đọc dữ liệu... ✅\n"
-                "▪️ Nhận dạng & phân loại băng chuyền... ✅\n"
-                "▪️ Tô màu & xuất file Excel...",
+                "▪️ Nhận dạng & phân loại... ✅\n"
+                "▪️ Tô màu & xuất file... ✅\n"
+                "▪️ ☁️ Upload lên Google Drive...",
                 chat_id, status_msg.message_id, parse_mode='Markdown'
             )
 
-            # Ghi lịch sử
-            uname = getattr(getattr(message, 'from_user', None), 'username', None)
-            history_manager.add_entry(chat_id, uname, success)
+            # Upload lên Google Drive
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            drive_filename = f"BaoGiao_BHS_{timestamp}.xlsx"
+            drive_link = ""
+            try:
+                drive_link = drive_manager.upload_report(out_path, drive_filename)
+            except Exception as drive_err:
+                print(f"⚠️ Upload Drive thất bại: {drive_err}")
 
-            with open(out_path, 'rb') as doc:
-                bot.send_document(
-                    chat_id, doc,
-                    caption=(
-                        f"🎉 *HOÀN TẤT!* _{datetime.now().strftime('%d/%m/%Y %H:%M')}_\n\n"
-                        "📋 BẢNG 1 – Băng Chuyền ĐI\n"
-                        "📋 BẢNG 2 – Băng Chuyền ĐẾN\n"
-                        "📋 BẢNG 3 – Check\\-In\n"
-                        "📋 BẢNG 4 – Sorter"
-                    ),
+            # Ghi lịch sử vào Google Sheets
+            uname = getattr(getattr(message, 'from_user', None), 'username', None)
+            history_manager.add_entry(chat_id, uname, success, drive_link)
+
+            # Gửi kết quả cho user
+            result_time = datetime.now().strftime('%d/%m/%Y %H:%M')
+            caption = (
+                f"🎉 *HOÀN TẤT!* _{result_time}_\n\n"
+                "📋 BẢNG 1 \u2013 Băng Chuyền ĐI\n"
+                "📋 BẢNG 2 \u2013 Băng Chuyền ĐẺN\n"
+                "📋 BẢNG 3 \u2013 Check\-In\n"
+                "📋 BẢNG 4 \u2013 Sorter"
+            )
+
+            if drive_link:
+                # Gửi link Drive kèm nút bấm
+                markup = types.InlineKeyboardMarkup()
+                markup.add(types.InlineKeyboardButton("📂 Mở file trên Google Drive", url=drive_link))
+                bot.send_message(
+                    chat_id,
+                    caption,
                     parse_mode='MarkdownV2',
-                    reply_markup=main_menu()
+                    reply_markup=markup
                 )
+            else:
+                # Fallback: đính kèm file trực tiếp nếu Drive lỗi
+                with open(out_path, 'rb') as doc:
+                    bot.send_document(chat_id, doc, caption="🎉 Hoàn tất\! File đính kèm bên dưới\.")
 
             bot.delete_message(chat_id, status_msg.message_id)
         else:
