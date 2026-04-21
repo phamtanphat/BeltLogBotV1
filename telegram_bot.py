@@ -31,21 +31,57 @@ def main_menu():
     return markup
 
 
-# ─── Helper: tự nhận dạng loại file từ tên ──────────────
-def detect_file_type(filename: str) -> str:
-    """Trả về 'eq', 'mds', hoặc 'unknown'"""
+# ─── Nhận dạng loại file: 3 tầng ────────────────────────
+def detect_file_type(filename: str, local_path: str = None) -> str:
+    """
+    Nhận dạng file EQ hay MDS theo 3 tầng ưu tiên:
+      1. Tên file (nhanh, không cần mở file)
+      2. Tên Sheet bên trong Excel (chính xác hơn)
+      3. Nội dung cột tiêu đề (tầng cuối, fallback)
+    Trả về: 'eq', 'mds', hoặc 'unknown'
+    """
+    # ── Tầng 1: Tên file ────────────────────────────────
     name = filename.lower()
-    # Nhận dạng file Thiết bị / EQ (mở rộng từ khóa)
-    if any(k in name for k in [
-        'eq', 'equipment', 'thiet_bi', 'ly_lich', 'lich_su',
-        'source_eq', 'ctbt', 'theo_doi', 'history', 'log'
-    ]):
+    if any(k in name for k in ['eq', 'equipment', 'ly_lich', 'lich_su', 'source_eq']):
         return 'eq'
-    # Nhận dạng file MDS
-    if any(k in name for k in [
-        'mds', 'maintenance', 'bao_tri', 'source_mds', 'nhat_ky'
-    ]):
+    if any(k in name for k in ['mds', 'source_mds', 'nhat_ky']):
         return 'mds'
+
+    # ── Tầng 2: Đọc tên Sheet bên trong Excel ───────────
+    if local_path:
+        try:
+            import openpyxl
+            wb = openpyxl.load_workbook(local_path, read_only=True, data_only=True)
+            sheet_names_lower = [s.lower() for s in wb.sheetnames]
+            wb.close()
+
+            # EQ: sheet thường tên "Sổ theo dõi CTBT", "Lý lịch", "Equipment"...
+            eq_hints = ['lý lịch', 'ly lich', 'equipment', 'ctbt', 'bảo trì thiết bị']
+            # MDS: sheet thường tên "MDS", "Nhật ký", "Maintenance"...
+            mds_hints = ['mds', 'nhật ký', 'nhat ky', 'maintenance']
+
+            for s in sheet_names_lower:
+                if any(h in s for h in eq_hints):
+                    return 'eq'
+                if any(h in s for h in mds_hints):
+                    return 'mds'
+
+            # ── Tầng 3: Đọc tiêu đề hàng đầu của Sheet đầu tiên ──
+            wb2 = openpyxl.load_workbook(local_path, read_only=True, data_only=True)
+            ws = wb2.active
+            header_text = ""
+            for row in ws.iter_rows(max_row=5, values_only=True):
+                for cell in row:
+                    if cell: header_text += str(cell).lower() + " "
+            wb2.close()
+
+            if any(h in header_text for h in eq_hints):
+                return 'eq'
+            if any(h in header_text for h in mds_hints):
+                return 'mds'
+        except Exception:
+            pass  # Nếu đọc lỗi thì bỏ qua, rơi xuống unknown
+
     return 'unknown'
 
 
@@ -167,13 +203,26 @@ def handle_docs(message):
 
     user_sessions.setdefault(chat_id, {"eq": None, "mds": None, "pending": None})
 
-    # Tự nhận dạng loại file
-    file_type = detect_file_type(file_name)
+    # Tải file xuống trước để có thể đọc nội dung
+    try:
+        file_info = bot.get_file(message.document.file_id)
+        data = bot.download_file(file_info.file_path)
+        tmp_path = os.path.join(DOWNLOAD_DIR, f"tmp_{chat_id}_{file_name}")
+        with open(tmp_path, 'wb') as f:
+            f.write(data)
+    except Exception as e:
+        bot.reply_to(message, f"❌ Lỗi tải file từ Telegram: `{e}`", parse_mode='Markdown')
+        return
+
+    # Nhận dạng 3 tầng: tên file → sheet names → header content
+    file_type = detect_file_type(file_name, local_path=tmp_path)
+
     if file_type == 'unknown':
-        # Lưu tạm file_id vào session — KHÔNG nhét vào callback_data (giới hạn 64 bytes)
+        # Vẫn không nhận ra → hỏi người dùng (file đã tải vào tmp, lưu path vào pending)
         user_sessions[chat_id]["pending"] = {
             "file_id": message.document.file_id,
-            "file_name": file_name
+            "file_name": file_name,
+            "tmp_path": tmp_path       # Dùng lại, không tải lại lần nữa
         }
         markup = types.InlineKeyboardMarkup()
         markup.row(
@@ -188,7 +237,8 @@ def handle_docs(message):
         )
         return
 
-    _save_file(chat_id, message, file_name, message.document.file_id, file_type)
+    # Đã nhận dạng được → chuyển thẳng vào slot, không cần tải lại
+    _store_file(chat_id, message, file_name, file_type, tmp_path)
 
 
 # ─── Xử lý nút Inline (khi không nhận ra loại file) ────
@@ -206,13 +256,15 @@ def callback_set_type(call):
     bot.answer_callback_query(call.id, f"✅ Đã xác nhận: {label}")
     bot.edit_message_reply_markup(chat_id, call.message.message_id, reply_markup=None)
 
-    user_sessions[chat_id]["pending"] = None     # Xóa pending
-    _save_file(chat_id, call.message, pending["file_name"], pending["file_id"], file_type)
+    user_sessions[chat_id]["pending"] = None
+    _store_file(chat_id, call.message, pending["file_name"], file_type,
+                pending.get("tmp_path"))          # Dùng lại file đã tải, không download lại
 
 
-# ─── Lưu file vào session ───────────────────────────────
-def _save_file(chat_id, message, file_name, file_id, file_type):
-    s = user_sessions.get(chat_id, {"eq": None, "mds": None})
+# ─── Lưu file đã tải vào session ───────────────────────
+def _store_file(chat_id, message, file_name, file_type, tmp_path):
+    """Đổi tên file tmp thành tên chuẩn và ghi vào session."""
+    s = user_sessions.get(chat_id, {"eq": None, "mds": None, "pending": None})
 
     # Xóa file cũ cùng slot nếu có
     old = s.get(file_type)
@@ -220,11 +272,12 @@ def _save_file(chat_id, message, file_name, file_id, file_type):
         os.remove(old)
 
     try:
-        file_info = bot.get_file(file_id)
-        data = bot.download_file(file_info.file_path)
+        # Đổi tên file tạm thành tên chuẩn
         save_path = os.path.join(DOWNLOAD_DIR, f"user{chat_id}_{file_type}_{file_name}")
-        with open(save_path, 'wb') as f:
-            f.write(data)
+        if tmp_path and os.path.exists(tmp_path):
+            os.rename(tmp_path, save_path)
+        else:
+            raise FileNotFoundError("File tạm không còn tồn tại.")
 
         user_sessions[chat_id][file_type] = save_path
         s = user_sessions[chat_id]
@@ -253,7 +306,7 @@ def _save_file(chat_id, message, file_name, file_id, file_type):
             )
 
     except Exception as e:
-        bot.send_message(chat_id, f"❌ Lỗi tải file: `{e}`", parse_mode='Markdown')
+        bot.send_message(chat_id, f"❌ Lỗi lưu file: `{e}`", parse_mode='Markdown')
 
 
 # ─── Nút Inline "Tạo ngay" ──────────────────────────────
