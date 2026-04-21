@@ -375,7 +375,7 @@ def _run_report(chat_id, message):
             caption = (
                 f"🎉 *HOÀN TẤT!* _{result_time}_\n\n"
                 "📋 BẢNG 1 \u2013 Băng Chuyền ĐI\n"
-                "📋 BẢNG 2 \u2013 Băng Chuyền ĐẺN\n"
+                "📋 BẢNG 2 \u2013 Băng Chuyền ĐẾN\n"
                 "📋 BẢNG 3 \u2013 Check-In\n"
                 "📋 BẢNG 4 \u2013 Sorter"
             )
