@@ -1,6 +1,0 @@
-.env
-downloads/
-__pycache__/
-*.pyc
-final_equipment_report.xlsx
-.DS_Store
