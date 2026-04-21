@@ -14,7 +14,22 @@ bot = telebot.TeleBot(TOKEN)
 DOWNLOAD_DIR = "downloads"
 os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 
-# session: { chat_id: { "eq": path | None, "mds": path | None } }
+# Dọn rác còn sót từ lần chạy trước (Render restart, crash...)
+def _cleanup_stale_files():
+    for fname in os.listdir(DOWNLOAD_DIR):
+        fpath = os.path.join(DOWNLOAD_DIR, fname)
+        try: os.remove(fpath)
+        except Exception: pass
+
+_cleanup_stale_files()
+
+# Xóa file an toàn (không crash nếu file không tồn tại)
+def safe_remove(path):
+    if path and os.path.exists(path):
+        try: os.remove(path)
+        except Exception: pass
+
+# session: { chat_id: { "eq": path | None, "mds": path | None, "pending": None } }
 user_sessions = {}
 
 
@@ -157,7 +172,7 @@ def reset_session(message):
     for key in ['eq', 'mds']:
         f = s.get(key)
         if f and os.path.exists(f):
-            os.remove(f)
+            safe_remove(f)
     user_sessions[chat_id] = {"eq": None, "mds": None}
     bot.send_message(
         chat_id,
@@ -265,7 +280,7 @@ def _store_file(chat_id, message, file_name, file_type, tmp_path):
     # Xóa file cũ cùng slot nếu có
     old = s.get(file_type)
     if old and os.path.exists(old):
-        os.remove(old)
+        safe_remove(old)
 
     try:
         # Đổi tên file tạm thành tên chuẩn
@@ -407,9 +422,11 @@ def _run_report(chat_id, message):
 
     finally:
         for key in ['eq', 'mds']:
-            f = s.get(key)
-            if f and os.path.exists(f): os.remove(f)
-        if os.path.exists(out_path): os.remove(out_path)
+            safe_remove(s.get(key))
+        # Dọn cả file tmp pending nếu có (kẽ hở trước đây)
+        pending = s.get('pending') or {}
+        safe_remove(pending.get('tmp_path'))
+        safe_remove(out_path)
         user_sessions[chat_id] = {"eq": None, "mds": None, "pending": None}
 
 
