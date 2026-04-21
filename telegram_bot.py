@@ -3,7 +3,6 @@ from telebot import types
 import os
 import generate_report
 import history_manager
-import drive_manager
 from datetime import datetime
 from keep_alive import keep_alive
 
@@ -363,48 +362,27 @@ def _run_report(chat_id, message):
                 "⚙️ *Đang xử lý...*\n\n"
                 "▪️ Đọc dữ liệu... ✅\n"
                 "▪️ Nhận dạng & phân loại... ✅\n"
-                "▪️ Tô màu & xuất file... ✅\n"
-                "▪️ ☁️ Upload lên Google Drive...",
+                "▪️ Tô màu & xuất file... ✅",
                 chat_id, status_msg.message_id, parse_mode='Markdown'
             )
 
-            # Upload lên Google Drive
-            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            drive_filename = f"BaoGiao_BHS_{timestamp}.xlsx"
-            drive_link = ""
-            try:
-                drive_link = drive_manager.upload_report(out_path, drive_filename)
-            except Exception as drive_err:
-                print(f"⚠️ Upload Drive thất bại: {drive_err}")
-
-            # Ghi lịch sử vào Google Sheets
+            # Ghi lịch sử vào Google Sheets (Bỏ trống drive_link)
             uname = getattr(getattr(message, 'from_user', None), 'username', None)
-            history_manager.add_entry(chat_id, uname, success, drive_link)
+            history_manager.add_entry(chat_id, uname, success, "")
 
-            # Gửi kết quả cho user
+            # Gửi kết quả cho user trực tiếp qua Telegram
             result_time = datetime.now().strftime('%d/%m/%Y %H:%M')
             caption = (
                 f"🎉 *HOÀN TẤT!* _{result_time}_\n\n"
                 "📋 BẢNG 1 \u2013 Băng Chuyền ĐI\n"
                 "📋 BẢNG 2 \u2013 Băng Chuyền ĐẺN\n"
-                "📋 BẢNG 3 \u2013 Check\-In\n"
+                "📋 BẢNG 3 \u2013 Check-In\n"
                 "📋 BẢNG 4 \u2013 Sorter"
             )
 
-            if drive_link:
-                # Gửi link Drive kèm nút bấm
-                markup = types.InlineKeyboardMarkup()
-                markup.add(types.InlineKeyboardButton("📂 Mở file trên Google Drive", url=drive_link))
-                bot.send_message(
-                    chat_id,
-                    caption,
-                    parse_mode='MarkdownV2',
-                    reply_markup=markup
-                )
-            else:
-                # Fallback: đính kèm file trực tiếp nếu Drive lỗi
-                with open(out_path, 'rb') as doc:
-                    bot.send_document(chat_id, doc, caption="🎉 Hoàn tất\! File đính kèm bên dưới\.")
+            # Gửi đính kèm file trực tiếp
+            with open(out_path, 'rb') as doc:
+                bot.send_document(chat_id, doc, caption=caption, parse_mode='Markdown')
 
             bot.delete_message(chat_id, status_msg.message_id)
         else:
