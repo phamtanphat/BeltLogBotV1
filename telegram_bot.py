@@ -49,62 +49,48 @@ def main_menu():
 # ─── Nhận dạng loại file: 3 tầng ────────────────────────
 def detect_file_type(filename: str, local_path: str = None) -> str:
     """
-    Nhận dạng file EQ hay MDS theo 3 tầng ưu tiên:
-      1. Tên file (nhanh, không cần mở file)
-      2. Tên Sheet bên trong Excel (chính xác hơn)
-      3. Nội dung cột tiêu đề (tầng cuối, fallback)
+    Nhận dạng file EQ hay MDS bằng cách ĐỌC NỘI DUNG bên trong.
+    Tên file KHÔNG được dùng để phán đoán (quá dễ sai).
+    
+    Ưu tiên:
+      1. Tên Sheet → chính xác nhất, ổn định
+      2. Tiêu đề 5 dòng đầu → fallback nếu sheet tên chung chung
     Trả về: 'eq', 'mds', hoặc 'unknown'
     """
-    # ── Tầng 1: Tên file (kiểm tra nhiều kiểu đặt tên phổ biến) ─
-    import unicodedata
-    # Chuẩn hoá về NFC để so sánh nhất quán trên mọi hệ điều hành
-    name = unicodedata.normalize('NFC', filename.lower())
+    eq_hints  = ['lý lịch', 'ly lich', 'equipment', 'ctbt', 'bảo trì thiết bị',
+                 'lịch sử thiết bị', 'ly lich thiet bi']
+    mds_hints = ['mds', 'nhật ký', 'nhat ky', 'maintenance', 'theo dõi ctbt']
 
-    eq_keywords = [
-        # Latin / no diacritics
-        'eq', 'equipment', 'ly_lich', 'lich_su', 'source_eq',
-        # Tiếng Việt có dấu (NFC)
-        'lý lịch', 'lí lịch', 'lịch sử', 'thiết bị', 'thiet bi',
-        # Tiếng Việt không dấu
-        'ly lich', 'lich su', 'ctbt', 'ghi lịch',
-    ]
-    mds_keywords = [
-        'mds', 'source_mds', 'nhat_ky',
-        'nhật ký', 'nhat ky', 'maintenance', 'bảo trì', 'bao tri',
-    ]
-    if any(k in name for k in eq_keywords):  return 'eq'
-    if any(k in name for k in mds_keywords): return 'mds'
+    if not local_path:
+        return 'unknown'
 
-    # ── Tầng 2 + 3: Mở file Excel một lần, đọc cả Sheet names và Header ──
-    if local_path:
-        try:
-            import openpyxl
-            wb = openpyxl.load_workbook(local_path, read_only=True, data_only=True)
-            sheet_names_lower = [s.lower() for s in wb.sheetnames]
+    try:
+        import openpyxl, unicodedata
 
-            eq_hints  = ['lý lịch', 'ly lich', 'equipment', 'ctbt', 'bảo trì thiết bị']
-            mds_hints = ['mds', 'nhật ký', 'nhat ky', 'maintenance']
+        def normalize(s):
+            return unicodedata.normalize('NFC', str(s).lower())
 
-            # Tầng 2: Tên Sheet
-            for s in sheet_names_lower:
-                if any(h in s for h in eq_hints):
-                    wb.close(); return 'eq'
-                if any(h in s for h in mds_hints):
-                    wb.close(); return 'mds'
+        wb = openpyxl.load_workbook(local_path, read_only=True, data_only=True)
 
-            # Tầng 3: Đọc 5 dòng đầu Sheet đầu tiên (vẫn cùng 1 lần mở)
-            ws = wb.active
-            header_text = ""
-            for row in ws.iter_rows(max_row=5, values_only=True):
-                for cell in row:
-                    if cell: header_text += str(cell).lower() + " "
-            wb.close()
+        # ── Bước 1: Tên Sheet ─────────────────────────────
+        for s in wb.sheetnames:
+            sn = normalize(s)
+            if any(h in sn for h in eq_hints):  wb.close(); return 'eq'
+            if any(h in sn for h in mds_hints): wb.close(); return 'mds'
 
-            if any(h in header_text for h in eq_hints):  return 'eq'
-            if any(h in header_text for h in mds_hints): return 'mds'
+        # ── Bước 2: Quét tiêu đề 5 dòng đầu ─────────────
+        ws = wb.active
+        header_text = ""
+        for row in ws.iter_rows(max_row=5, values_only=True):
+            for cell in row:
+                if cell: header_text += normalize(cell) + " "
+        wb.close()
 
-        except Exception:
-            pass  # Đọc lỗi → rơi xuống unknown
+        if any(h in header_text for h in eq_hints):  return 'eq'
+        if any(h in header_text for h in mds_hints): return 'mds'
+
+    except Exception as e:
+        print(f"⚠️ Lỗi đọc file để nhận dạng: {e}")
 
     return 'unknown'
 
