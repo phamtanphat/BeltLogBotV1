@@ -55,12 +55,25 @@ def detect_file_type(filename: str, local_path: str = None) -> str:
       3. Nội dung cột tiêu đề (tầng cuối, fallback)
     Trả về: 'eq', 'mds', hoặc 'unknown'
     """
-    # ── Tầng 1: Tên file ────────────────────────────────
-    name = filename.lower()
-    if any(k in name for k in ['eq', 'equipment', 'ly_lich', 'lich_su', 'source_eq']):
-        return 'eq'
-    if any(k in name for k in ['mds', 'source_mds', 'nhat_ky']):
-        return 'mds'
+    # ── Tầng 1: Tên file (kiểm tra nhiều kiểu đặt tên phổ biến) ─
+    import unicodedata
+    # Chuẩn hoá về NFC để so sánh nhất quán trên mọi hệ điều hành
+    name = unicodedata.normalize('NFC', filename.lower())
+
+    eq_keywords = [
+        # Latin / no diacritics
+        'eq', 'equipment', 'ly_lich', 'lich_su', 'source_eq',
+        # Tiếng Việt có dấu (NFC)
+        'lý lịch', 'lí lịch', 'lịch sử', 'thiết bị', 'thiet bi',
+        # Tiếng Việt không dấu
+        'ly lich', 'lich su', 'ctbt', 'ghi lịch',
+    ]
+    mds_keywords = [
+        'mds', 'source_mds', 'nhat_ky',
+        'nhật ký', 'nhat ky', 'maintenance', 'bảo trì', 'bao tri',
+    ]
+    if any(k in name for k in eq_keywords):  return 'eq'
+    if any(k in name for k in mds_keywords): return 'mds'
 
     # ── Tầng 2 + 3: Mở file Excel một lần, đọc cả Sheet names và Header ──
     if local_path:
