@@ -2,6 +2,7 @@ import telebot
 from telebot import types
 import os
 import generate_report
+import history_manager
 from datetime import datetime
 from keep_alive import keep_alive
 
@@ -23,6 +24,7 @@ def main_menu():
         types.KeyboardButton("📊 Tạo Báo Cáo"),
         types.KeyboardButton("🔄 Làm Mới"),
         types.KeyboardButton("📋 Trạng Thái"),
+        types.KeyboardButton("📜 Lịch Sử"),
         types.KeyboardButton("❓ Hướng Dẫn"),
     )
     return markup
@@ -85,6 +87,16 @@ def send_help(message):
         "• Gửi 2 file theo *bất kỳ thứ tự nào* đều được\n"
         "• Bấm *🔄 Làm Mới* nếu muốn bắt đầu từ đầu\n"
         "• Bấm *📋 Trạng Thái* để xem đã nhận file chưa",
+        parse_mode='Markdown',
+        reply_markup=main_menu()
+    )
+
+
+@bot.message_handler(func=lambda m: m.text in ["📜 Lịch Sử", "/history"])
+def send_history(message):
+    bot.send_message(
+        message.chat.id,
+        history_manager.format_history(),
         parse_mode='Markdown',
         reply_markup=main_menu()
     )
@@ -273,6 +285,10 @@ def _run_report(chat_id, message):
                 "▪️ Tô màu & xuất file Excel...",
                 chat_id, status_msg.message_id, parse_mode='Markdown'
             )
+
+            # Ghi lịch sử
+            uname = getattr(getattr(message, 'from_user', None), 'username', None)
+            history_manager.add_entry(chat_id, uname, success)
 
             with open(out_path, 'rb') as doc:
                 bot.send_document(

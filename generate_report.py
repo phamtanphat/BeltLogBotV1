@@ -97,7 +97,7 @@ def read_legacy_sheet(file_path, sheet_name):
         print(f"⚠️ [LỖI] Không thể đọc file: {e}")
         return pd.DataFrame()
 
-def process_and_merge_excel(file_equipment=FILE_EQUIPMENT, file_mds=FILE_MDS, output_excel=OUTPUT_EXCEL, verbose=True):
+def process_and_merge_excel(file_equipment=FILE_EQUIPMENT, file_mds=FILE_MDS, output_excel=OUTPUT_EXCEL, verbose=True) -> dict | bool:
     if verbose:
         print("=========================================================")
         print("🚀 BẮT ĐẦU TỔNG HỢP BÁO CÁO LÝ LỊCH THIẾT BỊ TỰ ĐỘNG 🚀")
@@ -110,7 +110,7 @@ def process_and_merge_excel(file_equipment=FILE_EQUIPMENT, file_mds=FILE_MDS, ou
     df_final = pd.concat([df_eq, df_mds], ignore_index=True)
     if df_final.empty:
         if verbose: print("❌ LỖI: Cả 2 file đều trống. Dừng chương trình.")
-        return False
+        return {}
         
     df_final = df_final.drop_duplicates()
 
@@ -160,11 +160,14 @@ def process_and_merge_excel(file_equipment=FILE_EQUIPMENT, file_mds=FILE_MDS, ou
         sheet.column_dimensions['H'].width = 25
         
     wb.save(output_excel)
-    
+
+    # Trả về số dòng từng sheet để Bot ghi lịch sử
+    sheet_counts = {name.split("_", 1)[1]: len(df) for name, df in sheets_dict.items()}
+
     if verbose:
         print(f"\n🎉 HOÀN THẤT! Đã xuất 4 Bảng riêng biệt tại:\n{output_excel}")
         print("=========================================================\n")
-    return True
+    return sheet_counts
 
 if __name__ == "__main__":
     process_and_merge_excel()
