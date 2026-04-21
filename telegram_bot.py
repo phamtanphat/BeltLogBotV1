@@ -47,40 +47,36 @@ def detect_file_type(filename: str, local_path: str = None) -> str:
     if any(k in name for k in ['mds', 'source_mds', 'nhat_ky']):
         return 'mds'
 
-    # ── Tầng 2: Đọc tên Sheet bên trong Excel ───────────
+    # ── Tầng 2 + 3: Mở file Excel một lần, đọc cả Sheet names và Header ──
     if local_path:
         try:
             import openpyxl
             wb = openpyxl.load_workbook(local_path, read_only=True, data_only=True)
             sheet_names_lower = [s.lower() for s in wb.sheetnames]
-            wb.close()
 
-            # EQ: sheet thường tên "Sổ theo dõi CTBT", "Lý lịch", "Equipment"...
-            eq_hints = ['lý lịch', 'ly lich', 'equipment', 'ctbt', 'bảo trì thiết bị']
-            # MDS: sheet thường tên "MDS", "Nhật ký", "Maintenance"...
+            eq_hints  = ['lý lịch', 'ly lich', 'equipment', 'ctbt', 'bảo trì thiết bị']
             mds_hints = ['mds', 'nhật ký', 'nhat ky', 'maintenance']
 
+            # Tầng 2: Tên Sheet
             for s in sheet_names_lower:
                 if any(h in s for h in eq_hints):
-                    return 'eq'
+                    wb.close(); return 'eq'
                 if any(h in s for h in mds_hints):
-                    return 'mds'
+                    wb.close(); return 'mds'
 
-            # ── Tầng 3: Đọc tiêu đề hàng đầu của Sheet đầu tiên ──
-            wb2 = openpyxl.load_workbook(local_path, read_only=True, data_only=True)
-            ws = wb2.active
+            # Tầng 3: Đọc 5 dòng đầu Sheet đầu tiên (vẫn cùng 1 lần mở)
+            ws = wb.active
             header_text = ""
             for row in ws.iter_rows(max_row=5, values_only=True):
                 for cell in row:
                     if cell: header_text += str(cell).lower() + " "
-            wb2.close()
+            wb.close()
 
-            if any(h in header_text for h in eq_hints):
-                return 'eq'
-            if any(h in header_text for h in mds_hints):
-                return 'mds'
+            if any(h in header_text for h in eq_hints):  return 'eq'
+            if any(h in header_text for h in mds_hints): return 'mds'
+
         except Exception:
-            pass  # Nếu đọc lỗi thì bỏ qua, rơi xuống unknown
+            pass  # Đọc lỗi → rơi xuống unknown
 
     return 'unknown'
 
