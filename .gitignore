@@ -1,0 +1,5 @@
+.env
+__pycache__/
+downloads/
+google_credentials.json
+canvas-landing-*.json
